@@ -91,7 +91,7 @@ EOT
     counter=1
     for alt_name in ${cn} ; do
       echo "DNS.${counter} = ${alt_name}" >> "${req_filename}"
-      echo "IP.${counter} = ${alt_name}" >> "${req_filename}"
+      [[ ${alt_name} =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && echo "IP.${counter} = ${alt_name}" >> "${req_filename}"
       let counter+=1
     done
   fi
