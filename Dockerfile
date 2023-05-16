@@ -24,6 +24,6 @@ LABEL \
       org.label-schema.vcs-url="https://github.com/gissehel/locattps" \
       org.label-schema.schema-version="1.0"
 
-ADD create-image-script.sh /tmp/create-image-script.sh
-COPY on-start-locattps.sh /docker-entrypoint.d/05-on-start-locattps.sh
+COPY create-image-script.sh /tmp/create-image-script.sh
+COPY --chmod=755 on-start-locattps.sh /docker-entrypoint.d/05-on-start-locattps.sh
 RUN /bin/sh /tmp/create-image-script.sh && rm -f /tmp/create-image-script.sh
