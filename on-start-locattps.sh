@@ -22,7 +22,7 @@ create_dirs() {
 create_defaut_conf() {
     cat > "${CONF_FILE}" << __END__
 - listen:
-    name: xdemo.locattps.local
+    name: xdemo.127-0-0-1.nip.io
   redirectTo:
     host: 
     port: 
