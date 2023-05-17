@@ -20,7 +20,7 @@ create_dirs() {
 }
 
 create_defaut_conf() {
-    cat > "${CONF_FILE}" << __END__
+    cat > "${CONF_FILE}" <<__END__
 - listen:
     name: xdemo.127-0-0-1.nip.io
   redirectTo:
@@ -43,20 +43,20 @@ create_req_config() {
     local cn="${2}"
     local is_server="${3}"
 
-  cat >"${req_filename}" <<EOT
+  cat >"${req_filename}" <<__END__
 [ req ]
 distinguished_name     = req_distinguished_name
 attributes             = req_attributes
 prompt                 = no
 output_password        = mypass
-EOT
+__END__
 
-  [ -n "${is_server}" ] && cat >>"${req_filename}" <<EOT
+  [ -n "${is_server}" ] && cat >>"${req_filename}" <<__END__
 req_extensions         = v3_req
 x509_extensions        = v509
-EOT
+__END__
 
-  cat >>"${req_filename}" <<EOT
+  cat >>"${req_filename}" <<__END__
 
 [ req_distinguished_name ]
 C                      = xx
@@ -69,10 +69,10 @@ emailAddress           = none
 
 [ req_attributes ]
 challengePassword      = A challenge password
-EOT
+__END__
 
   if [ -n "${is_server}" ] ; then
-    cat >>"${req_filename}" <<EOT
+    cat >>"${req_filename}" <<__END__
 [ v3_req ]
 # Extensions to add to a certificate request
 basicConstraints = CA:FALSE
@@ -87,7 +87,8 @@ subjectAltName          = @alt_names
 subjectAltName          = @alt_names
 
 [alt_names]
-EOT
+__END__
+
     counter=1
     for alt_name in ${cn} ; do
       echo "DNS.${counter} = ${alt_name}" >> "${req_filename}"
@@ -208,6 +209,28 @@ read_conf() {
     rm -rf "/etc/nginx/conf.d"
     mkdir -p "/etc/nginx/conf.d"
     let i=0
+
+    cat > "/etc/nginx/conf.d/00-common-conf.conf" <<__END__
+map \$http_x_forwarded_proto \$proxy_x_forwarded_proto {
+  default \$http_x_forwarded_proto;
+  ''      \$scheme;
+}
+map \$http_x_forwarded_port \$proxy_x_forwarded_port {
+  default \$http_x_forwarded_port;
+  ''      \$server_port;
+}
+map \$http_upgrade \$proxy_connection {
+  default upgrade;
+  '' close;
+}
+server_names_hash_bucket_size 128;
+map \$scheme \$proxy_x_forwarded_ssl {
+  default off;
+  https on;
+}
+gzip_types text/plain text/css application/javascript application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+__END__
+
     while [ "${i}" -lt "${n_conf}" ]
     do
         echo "conf [${i}]"
@@ -238,56 +261,39 @@ read_conf() {
         chown nginx:nginx "/etc/nginx/certs/${listen_name}.crt" "/etc/nginx/certs/${listen_name}.key"
         chmod 400 "/etc/nginx/certs/${listen_name}.crt" "/etc/nginx/certs/${listen_name}.key"
 
-        local confname="/etc/nginx/conf.d/conf-${i}-${listen_name}-${redir_host}-${redir_port}.conf"
-        echo "server {" > "${confname}"
-        echo "  server_name ${listen_name};" >> "${confname}"
-        echo "  listen ${listen_port} ssl http2 ;" >> "${confname}"
-        echo "  access_log /var/log/nginx/access-${i}-${listen_name}-${redir_host}-${redir_port}.log combined;" >> "${confname}"
-        echo "  add_header 'Access-Control-Allow-Origin' '*';" >> "${confname}"
-        echo "  ssl_protocols TLSv1.2 TLSv1.3;" >> "${confname}"
-        echo "  ssl_prefer_server_ciphers on;" >> "${confname}"
-        echo "  ssl_ciphers TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384;" >> "${confname}"
-        echo "  ssl_session_timeout 5m;" >> "${confname}"
-        echo "  ssl_session_cache shared:SSL:50m;" >> "${confname}"
-        echo "  ssl_session_tickets off;" >> "${confname}"
-        echo "  ssl_certificate /etc/nginx/certs/${listen_name}.crt;" >> "${confname}"
-        echo "  ssl_certificate_key /etc/nginx/certs/${listen_name}.key;" >> "${confname}"
-        # echo "  ssl_dhparam /etc/nginx/certs/${listen_name}.dhparam.pem;" >> "${confname}"
-        echo "  location / {" >> "${confname}"
-        echo "      proxy_pass http://${redir_host}:${redir_port};" >> "${confname}"
-        echo "      proxy_http_version 1.1;" >> "${confname}"
-        echo "      proxy_buffering off;" >> "${confname}"
-        echo "      proxy_set_header Upgrade \$http_upgrade;" >> "${confname}"
-        echo "      proxy_set_header Connection \$proxy_connection;" >> "${confname}"
-        echo "      proxy_set_header Host \$host;" >> "${confname}"
-        echo "      proxy_set_header X-Real-IP \$remote_addr;" >> "${confname}"
-        echo "      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" >> "${confname}"
-        echo "      proxy_set_header X-Forwarded-Proto \$proxy_x_forwarded_proto;" >> "${confname}"
-        echo "      proxy_set_header X-Forwarded-Ssl \$proxy_x_forwarded_ssl;" >> "${confname}"
-        echo "      proxy_set_header X-Forwarded-Port \$proxy_x_forwarded_port;" >> "${confname}"
-        echo "      proxy_set_header Proxy '';" >> "${confname}"
-        echo "      proxy_pass_request_headers on;" >> "${confname}"
-        echo "  }" >> "${confname}"
-        echo "}" >> "${confname}"
-        echo "" >> "${confname}"
-        echo "map \$http_x_forwarded_proto \$proxy_x_forwarded_proto {" >> "${confname}"
-        echo "  default \$http_x_forwarded_proto;" >> "${confname}"
-        echo "  ''      \$scheme;" >> "${confname}"
-        echo "}" >> "${confname}"
-        echo "map \$http_x_forwarded_port \$proxy_x_forwarded_port {" >> "${confname}"
-        echo "  default \$http_x_forwarded_port;" >> "${confname}"
-        echo "  ''      \$server_port;" >> "${confname}"
-        echo "}" >> "${confname}"
-        echo "map \$http_upgrade \$proxy_connection {" >> "${confname}"
-        echo "  default upgrade;" >> "${confname}"
-        echo "  '' close;" >> "${confname}"
-        echo "}" >> "${confname}"
-        echo "server_names_hash_bucket_size 128;" >> "${confname}"
-        echo "map \$scheme \$proxy_x_forwarded_ssl {" >> "${confname}"
-        echo "  default off;" >> "${confname}"
-        echo "  https on;" >> "${confname}"
-        echo "}" >> "${confname}"
-        echo "gzip_types text/plain text/css application/javascript application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript;" >> "${confname}"
+        local confid="${i}-${listen_name}-${redir_host}-${redir_port}"
+        local confname="/etc/nginx/conf.d/conf-${confid}.conf"
+        cat > "${confname}" <<__END__
+server {
+  server_name ${listen_name};
+  listen ${listen_port} ssl http2 ;
+  access_log /var/log/nginx/access-${confid}.log combined;
+  add_header 'Access-Control-Allow-Origin' '*';
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+  ssl_ciphers TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384;
+  ssl_session_timeout 5m;
+  ssl_session_cache shared:SSL:50m;
+  ssl_session_tickets off;
+  ssl_certificate /etc/nginx/certs/${listen_name}.crt;
+  ssl_certificate_key /etc/nginx/certs/${listen_name}.key;
+  location / {
+      proxy_pass http://${redir_host}:${redir_port};
+      proxy_http_version 1.1;
+      proxy_buffering off;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection \$proxy_connection;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$proxy_x_forwarded_proto;
+      proxy_set_header X-Forwarded-Ssl \$proxy_x_forwarded_ssl;
+      proxy_set_header X-Forwarded-Port \$proxy_x_forwarded_port;
+      proxy_set_header Proxy '';
+      proxy_pass_request_headers on;
+  }
+}
+__END__
 
         let i="${i}+1"
     done
@@ -303,10 +309,8 @@ if [ -f "${CONF_FILE}" ]
 then
     ensure_root
     read_conf
-    set_state "RUNNING"
 else
     create_defaut_conf
-    set_state "TO-CONFIGURE"
     echo "You need to edit locattps.yml file"
     exit 1
 fi
