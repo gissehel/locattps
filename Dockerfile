@@ -4,13 +4,14 @@ MAINTAINER Gissehel <public-docker-local-dev-dl-maintainer@gissehel.org>
 
 ARG BUILD_DATE
 ARG VCS_REF
+ARG VERSION
 
 LABEL \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.authors="gissehel" \
       org.opencontainers.image.url="https://github.com/gissehel/locattps" \
       org.opencontainers.image.source="https://github.com/gissehel/locattps" \
-      org.opencontainers.image.version="1.0.0-${VCS_REF}" \
+      org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.vendor="gissehel" \
       org.opencontainers.image.ref.name="locattps" \
@@ -19,7 +20,7 @@ LABEL \
       org.label-schema.build-date="${BUILD_DATE}" \
       org.label-schema.vcs-ref="${VCS_REF}" \
       org.label-schema.name="locattps" \
-      org.label-schema.version="1.0.0-${VCS_REF}" \
+      org.label-schema.version="${VERSION}" \
       org.label-schema.vendor="gissehel" \
       org.label-schema.vcs-url="https://github.com/gissehel/locattps" \
       org.label-schema.schema-version="1.0"
