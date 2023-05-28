@@ -1,19 +1,21 @@
-name: Docker
+# This workflow requires definition of:
+# - vars.DOCKER_HUB_USER
+# - secrets.DOCKER_HUB_TOKEN
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+name: "Build"
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '23 13 * * *'
   push:
-    branches: [ "master" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
+    branches: 
+      - "*"
+    tags: 
+      - 'v*.*.*'
   pull_request:
-    branches: [ "master" ]
+    branches: 
+      - "*"
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -25,7 +27,6 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,75 +41,103 @@ jobs:
 
       - name: "Set environment variables"
         run: |
-            echo "GITHUB_SHA_SHORT=$(echo ${GITHUB_SHA} | cut -c1-8)" >> "${GITHUB_ENV}"
-            echo "BUILD_DATE=$(TZ=Europe/Paris date -Iseconds)" >> "${GITHUB_ENV}"
-            echo "REFNAME=$(echo "${{ github.ref }}" | sed -e 's/.*\///')" >> "${GITHUB_ENV}"
-            echo "VERSION=$(echo "${{ github.ref }}" | sed -e 's/.*\///')" >> "${GITHUB_ENV}"
+          # TIPS!! Works as an export replacement, that handles GITHUB_ENV
+          export_ga() {
+            for _name in "${@}"
+            do
+              local _key="${_name%%=*}"
+              local _value="${_name#*=}"
+              [ "${_key}" == "${_name}" ] && _value="${!_name}"
+              export $_key="${_value}"
+              echo "${_key}=${_value}" >> "${GITHUB_ENV}"
+            done
+          }
 
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
-      - name: Install cosign
-        if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@f3c664df7af409cb4873aa5068053ba9d61a57b6 #v2.6.0
+          export_ga GITHUB_SHA_SHORT="$(git rev-parse --short HEAD)"
+
+          export_ga GH_REGISTRY="ghcr.io"
+          export_ga GH_USER="${{ github.actor }}"
+          export_ga DOCKER_HUB_REGISTRY="docker.io"
+          export_ga DOCKER_HUB_USER="${{ vars.DOCKER_HUB_USER }}"
+          export_ga REPO_NAME="${{ github.event.repository.name }}"
+          export_ga IMAGE_NAME="${REPO_NAME}"
+
+          export_ga REFNAME="$(echo "${{ github.ref }}" | sed -e 's/.*\///')"
+          export_ga VERSION="${REFNAME}"
+          export_ga GH_IMAGE_NAME="${GH_REGISTRY}/${GH_USER}/${IMAGE_NAME}"
+          export_ga DOCKER_HUB_IMAGE_NAME="${DOCKER_HUB_REGISTRY}/${DOCKER_HUB_USER}/${IMAGE_NAME}"
+          export_ga MAIN_DOCKER_TAG="${GH_IMAGE_NAME}:${GITHUB_SHA_SHORT}"
+
+          export_ga IS_PR="${{ github.event_name == 'pull_request' }}"
+          export_ga IS_RELEASE="${{ startsWith(github.ref, 'refs/tags/v') }}"
+
+          export_ga BUILD_DATE="$(TZ=Europe/Paris date -Iseconds)"
+
+      - name: "Install cosign"
+        if: env.IS_PR != 'true'
+        uses: "sigstore/cosign-installer@v3.0.5"
         with:
-          cosign-release: 'v1.13.1'
-
+          cosign-release: "v2.0.2"
 
       # Workaround: https://github.com/docker/build-push-action/issues/461
-      - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@79abd3f86f79a9d68a23c75a09a9a85889262adf
+      - name: "Setup Docker buildx"
+        uses: "docker/setup-buildx-action@v2.5.0"
 
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
-      - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+      - name: "Login to github container registry"
+        if: env.IS_PR != 'true'
+        uses: "docker/login-action@v2.1.0"
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: "${{ env.GH_REGISTRY }}"
+          username: "${{ env.GH_USER }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
 
-      # Login against the other Docker registry only for tags
-      # https://github.com/docker/login-action
-      - name: Log into registry ${{ env.REGISTRY2 }} (only for tags)
-        if: "contains(github.ref, 'refs/tags')"
-        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+      - name: "Login to docker hub container registry"
+        if: env.IS_RELEASE == 'true'
+        uses: "docker/login-action@v2.1.0"
         with:
-          registry: ${{ env.REGISTRY2 }}
-          username: ${{ secrets.DOCKER_HUB_USER }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          registry: "${{ env.DOCKER_HUB_REGISTRY }}"
+          username: "${{ env.DOCKER_HUB_USER }}"
+          password: "${{ secrets.DOCKER_HUB_TOKEN }}"
 
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata (if not a tag)
-        id: meta
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
-        if: "!contains(github.ref, 'refs/tags')"
+      - name: "Extract Docker metadata (if not a release)"
+        id: "meta_not_release"
+        uses: "docker/metadata-action@v4.4.0"
+        if: env.IS_RELEASE != 'true'
         with:
+          tags: |
+            type=sha,enable=true,priority=100,prefix=,suffix=,format=short
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
           images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ${{ env.GH_IMAGE_NAME }}
 
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata (if a tag)
-        id: meta2
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
-        if: "contains(github.ref, 'refs/tags')"
+      - name: "Extract Docker metadata (if a release)"
+        id: "meta_release"
+        uses: "docker/metadata-action@v4.4.0"
+        if: env.IS_RELEASE == 'true'
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ env.REGISTRY2 }}/${{ secrets.DOCKER_HUB_USER }}/${{ github.event.repository.name }}
+            ${{ env.GH_IMAGE_NAME }}
+            ${{ env.DOCKER_HUB_IMAGE_NAME }}
 
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
+      - name: "Build image ${{ env.GH_IMAGE_NAME }} ${{ env.GITHUB_SHA_SHORT }}"
+        uses: "docker/build-push-action@v4.0.0"
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }},${{ steps.meta2.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }},${{ steps.meta2.outputs.labels }}
+          push: ${{ env.IS_PR != 'true' }}
+          tags: |
+            ${{ env.MAIN_DOCKER_TAG }}
+            ${{ steps.meta_not_release.outputs.tags }}
+            ${{ steps.meta_release.outputs.tags }}
+          labels: |
+            ${{ steps.meta_not_release.outputs.labels }}
+            ${{ steps.meta_release.outputs.labels }}          
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -118,14 +147,13 @@ jobs:
             BUILD_DATE=${{ env.BUILD_DATE }}
             VERSION=${{ env.VERSION_LABEL }}
 
-
       # Sign the resulting Docker image digest except on PRs.
       # This will only write to the public Rekor transparency log when the Docker
       # repository is public to avoid leaking data.  If you would like to publish
       # transparency data even for private images, pass --force to cosign below.
       # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
+        if: env.IS_PR != 'true'
         env:
           COSIGN_EXPERIMENTAL: "true"
         # This step uses the identity token to provision an ephemeral certificate
